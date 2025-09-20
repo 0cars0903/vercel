@@ -31,20 +31,28 @@ dotenv.load_dotenv()
 app = FastAPI()
 
 # --- CORS 설정 ---
-origins = [
-    "http://localhost",
-    "http://localhost:8001",
-    # ↓↓↓↓↓↓↓ 이 부분을 추가하거나 수정하세요! ↓↓↓↓↓↓↓
-    "https://vercel-tawny-delta.vercel.app/" ]
+# app/main.py
+
+# ... (다른 import문) ...
+
+app = FastAPI()
 
 # --- CORS 설정 ---
+# 허용할 출처 목록을 정의합니다. (중복 및 마지막 슬래시 제거)
+origins = [
+    "http://localhost",
+    "http://localhost:5173",
+    "https://vercel-tawny-delta.vercel.app/"  # 실제 배포 도메인 추가
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,  # 👈 이 부분을 ["*"]에서 origins 변수로 변경!
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ... (이하 API 엔드포인트 코드) ...
 
 # --- 환경 변수 로드 ---
 NAVER_OCR_SECRET_KEY = os.environ.get('NAVER_OCR_SECRET_KEY')
@@ -182,5 +190,3 @@ def delete_contact_api(contact_id: int, db: Session = Depends(get_db)):
 def health_check():
     """헬스 체크"""
     return {"status": "healthy", "version": "3.0-db"}
-
-# (참고: generate-vcf-qr, download-batch 등은 DB 연동 로직이 아직 적용되지 않았습니다.)
