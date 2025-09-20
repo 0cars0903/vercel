@@ -76,7 +76,7 @@ def ocr_agent(image_path: str) -> list[dict]:
 def extract_structured_info_with_retry(raw_text: str, model_name: str = 'mistral:latest') -> dict:
     """Ollama를 사용하여 텍스트에서 구조화된 정보 추출"""
     # ... (기존 app.py의 extract_structured_info_with_retry 함수 내용과 동일)
-    prompt = f"""You are an expert business card information extractor... Required JSON structure: {{"name": "", "title": "", "company": "","office_phone": "", "perenal_phone": "", "email": "", "address": ""}} ... --- Text to Analyze --- {raw_text}"""
+    prompt = f"""You are an expert business card information extractor... Required JSON structure: {{"name": "", "title": "", "company": "","phone": "", "email": "", "address": ""}} ... --- Text to Analyze --- {raw_text}"""
     try:
         response = ollama.chat(model=model_name, messages=[{'role': 'user', 'content': prompt}], format='json', options={'temperature': 0.3, 'top_p': 0.9})
         content = response['message']['content']
