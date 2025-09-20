@@ -56,11 +56,38 @@
         .btn-secondary:hover { background-color: var(--secondary-hover); }
         .upload-area {
             border: 2px dashed var(--border-color); border-radius: 8px; padding: 2rem; text-align: center;
-            background-color: #f7f8fa; cursor: pointer; transition: background-color 0.2s;
+            background-color: #f7f8fa; cursor: pointer; transition: all 0.3s ease;
             min-height: 120px; display: flex; align-items: center; justify-content: center; flex-direction: column;
         }
-        .upload-area:hover, .upload-area.dragover { background-color: var(--secondary-bg); }
-        .upload-area p { margin: 0; font-size: 1rem; color: var(--text-secondary); }
+        .upload-area:hover, .upload-area.dragover { 
+            background-color: var(--secondary-bg); 
+            border-color: var(--primary-color);
+            transform: translateY(-2px);
+        }
+        .upload-area.has-files {
+            background-color: #e7f3ff;
+            border-color: var(--primary-color);
+        }
+        .upload-icon {
+            width: 64px; height: 64px; color: #9ca3af; margin-bottom: 1rem;
+            transition: color 0.3s ease;
+        }
+        .upload-icon.small {
+            width: 40px; height: 40px; margin-bottom: 0.5rem;
+        }
+        .upload-area:hover .upload-icon, .upload-area.dragover .upload-icon {
+            color: var(--primary-color);
+        }
+        .upload-main-text {
+            margin: 0; font-size: 1rem; font-weight: 600; color: var(--text-primary);
+        }
+        .upload-sub-text {
+            margin: 0.25rem 0 0 0; font-size: 0.875rem; color: var(--text-secondary);
+        }
+        .file-info {
+            margin-top: 1rem; font-size: 0.875rem; color: var(--primary-color); font-weight: 500;
+            min-height: 20px;
+        }
         .hidden { display: none !important; }
         .input-group { margin-bottom: 1rem; }
         .input-group label { display: block; font-weight: 600; margin-bottom: 0.5rem; }
@@ -138,15 +165,36 @@
                 </div>
                 
                 <div id="batch-mode-ui">
-                    <div class="upload-area" id="batch-upload-area"><p>파일을 드래그하거나 클릭</p></div>
+                    <div class="upload-area" id="batch-upload-area">
+                        <svg class="upload-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 16.5V9.75m0 0l-3 3m3-3l3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" />
+                        </svg>
+                        <p class="upload-main-text">이미지를 드래그 앤 드롭하거나 클릭하세요</p>
+                        <p class="upload-sub-text">PNG, JPG, JPEG 최대 10MB</p>
+                        <div class="file-info" id="batch-file-info"></div>
+                    </div>
                     <input type="file" id="batch-file-input" multiple accept="image/*" class="hidden">
                     <button class="btn btn-primary" style="width: 100%; margin-top: 1rem;" onclick="processBatchFiles()">일괄 처리 시작</button>
                 </div>
 
                 <div id="two-sided-mode-ui" class="hidden">
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-                        <div class="upload-area" id="front-upload-area"><p>앞면 (한글)</p></div>
-                        <div class="upload-area" id="back-upload-area"><p>뒷면 (영문)</p></div>
+                        <div class="upload-area" id="front-upload-area">
+                            <svg class="upload-icon small" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 16.5V9.75m0 0l-3 3m3-3l3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" />
+                            </svg>
+                            <p class="upload-main-text">앞면 (한글)</p>
+                            <p class="upload-sub-text">클릭하여 선택</p>
+                            <div class="file-info" id="front-file-info"></div>
+                        </div>
+                        <div class="upload-area" id="back-upload-area">
+                            <svg class="upload-icon small" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 16.5V9.75m0 0l-3 3m3-3l3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" />
+                            </svg>
+                            <p class="upload-main-text">뒷면 (영문)</p>
+                            <p class="upload-sub-text">클릭하여 선택</p>
+                            <div class="file-info" id="back-file-info"></div>
+                        </div>
                     </div>
                     <input type="file" id="front-file-input" accept="image/*" class="hidden">
                     <input type="file" id="back-file-input" accept="image/*" class="hidden">
@@ -298,9 +346,37 @@
     }
 
     function updateUploadAreaText(area, files) {
-        const p = area.querySelector('p');
-        p.textContent = files.length > 0 ? `${files.length}개 파일 선택됨` : area.id.includes('batch') ? '파일을 드래그하거나 클릭' : area.id.includes('front') ? '앞면 (한글)' : '뒷면 (영문)';
-        area.style.backgroundColor = files.length > 0 ? '#e7f3ff' : '#f7f8fa';
+        const mainText = area.querySelector('.upload-main-text');
+        const subText = area.querySelector('.upload-sub-text');
+        const fileInfo = area.querySelector('.file-info');
+        
+        if (files.length > 0) {
+            area.classList.add('has-files');
+            
+            if (area.id.includes('batch')) {
+                mainText.textContent = `${files.length}개 파일 선택됨`;
+                subText.textContent = '추가 파일을 드래그하거나 클릭';
+                fileInfo.textContent = Array.from(files).map(f => f.name).join(', ');
+            } else {
+                mainText.textContent = '파일 선택됨';
+                subText.textContent = '다른 파일로 변경하려면 클릭';
+                fileInfo.textContent = files[0].name;
+            }
+        } else {
+            area.classList.remove('has-files');
+            
+            if (area.id.includes('batch')) {
+                mainText.textContent = '이미지를 드래그 앤 드롭하거나 클릭하세요';
+                subText.textContent = 'PNG, JPG, JPEG 최대 10MB';
+            } else if (area.id.includes('front')) {
+                mainText.textContent = '앞면 (한글)';
+                subText.textContent = '클릭하여 선택';
+            } else {
+                mainText.textContent = '뒷면 (영문)';
+                subText.textContent = '클릭하여 선택';
+            }
+            fileInfo.textContent = '';
+        }
     }
 
     function updateLoaderStep(stepIndex, status) {
@@ -331,7 +407,7 @@
                 listEl.appendChild(li);
             });
         
-        document.getElementById('download-notice').textContent = batchData.length >= 2 ? `총 ${batchData.length}개의 VCF가 zip 파일로 다운로드됩니다.` : 'VCF 파일이 다운로드됩니다.';
+        document.getElementById('download-notice').textContent = batchData.length >= 2 ? `이 ${batchData.length}개의 VCF가 zip 파일로 다운로드됩니다.` : 'VCF 파일이 다운로드됩니다.';
         updatePanelsVisibility();
     }
 
@@ -546,8 +622,3 @@
     </script>
 </body>
 </html>
-
-
-
-
-

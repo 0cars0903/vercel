@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 명함 스캐너</title>
+    <!-- Tailwind CSS CDN for modern styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .drag-over {
+            border-color: #3b82f6; /* blue-500 */
+            background-color: #eff6ff; /* blue-50 */
+        }
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border-left-color: #09f;
+            animation: spin 1s ease infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen font-sans">
+
+    <div class="w-full max-w-5xl bg-white rounded-xl shadow-lg p-8">
+        <header class="text-center mb-6">
+            <h1 class="text-3xl font-bold text-gray-800">AI 명함 스캐너</h1>
+            <p class="text-gray-500 mt-2">명함 이미지를 업로드하여 텍스트를 추출하고 연락처를 저장하세요.</p>
+        </header>
+
+        <!-- Mode Selection Controls -->
+        <div class="mb-6 flex justify-center items-center space-x-4 sm:space-x-8 border-b pb-4">
+            <label class="flex items-center space-x-2 cursor-pointer">
+                <input type="radio" name="mode" value="single" class="form-radio text-blue-600" checked>
+                <span class="text-gray-700 font-medium">단면 처리</span>
+            </label>
+            <label class="flex items-center space-x-2 cursor-pointer">
+                <input type="radio" name="mode" value="two-sided" class="form-radio text-blue-600">
+                <span class="text-gray-700 font-medium">양면 처리</span>
+            </label>
+            <label class="flex items-center space-x-2 cursor-pointer">
+                <input type="radio" name="mode" value="batch" class="form-radio text-blue-600">
+                <span class="text-gray-700 font-medium">일괄 처리</span>
+            </label>
+        </div>
+
+        <main class="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <!-- Left Panel: Input -->
+            <div class="flex flex-col space-y-4">
+                <!-- Uploaders Container -->
+                <div id="upload-container" class="space-y-4">
+                    <!-- Uploader for Front / Single / Batch -->
+                    <div id="upload-panel-front" class="relative flex flex-col items-center justify-center p-6 border-2 border-dashed border-gray-300 rounded-lg text-center cursor-pointer transition-all duration-300 hover:border-blue-500 hover:bg-blue-50">
+                        <input type="file" id="file-input-front" class="hidden" accept="image/*">
+                        <svg class="w-12 h-12 text-gray-400 mb-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 16.5V9.75m0 0l-3 3m3-3l3-3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" /></svg>
+                        <p id="upload-text-front" class="text-gray-700 font-semibold">이미지를 드래그 앤 드롭하거나 클릭</p>
+                        <div id="file-name-front" class="mt-2 text-sm text-gray-600 font-medium"></div>
+                    </div>
+                    <!-- Uploader for Back (Hidden by default) -->
+                    <div id="upload-panel-back" class="hidden relative flex-col items-center justify-center p-6 border-2 border-dashed border-gray-300 rounded-lg text-center cursor-pointer transition-all duration-300 hover:border-blue-500 hover:bg-blue-50">
+                        <input type="file" id="file-input-back" class="hidden" accept="image/*">
+                        <svg class="w-12 h-12 text-gray-400 mb-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 16.5V9.75m0 0l-3 3m3-3l3-3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" /></svg>
+                        <p class="text-gray-700 font-semibold">뒷면 이미지를 드래그 앤 드롭하거나 클릭</p>
+                        <div id="file-name-back" class="mt-2 text-sm text-gray-600 font-medium"></div>
+                    </div>
+                </div>
+
+                <!-- Process Button -->
+                <button id="process-button" class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 disabled:bg-gray-400 transition-colors" disabled>명함 인식 시작</button>
+
+                 <!-- Loading Indicator -->
+                 <div id="loading-indicator" class="hidden flex-col items-center justify-center text-center">
+                    <div class="spinner"></div>
+                    <p class="text-gray-700 font-semibold mt-4">처리 중입니다...</p>
+                </div>
+            </div>
+
+            <!-- Right Panel: Output -->
+            <div class="flex flex-col">
+                <h2 class="text-xl font-semibold text-gray-700 mb-4">추출 결과</h2>
+                <div id="result-area" class="w-full min-h-[12rem] p-4 border border-gray-300 rounded-lg bg-gray-50 overflow-y-auto">
+                    <p class="text-gray-400">이곳에 OCR 처리 결과가 표시됩니다...</p>
+                </div>
+                <div class="mt-4 grid grid-cols-2 gap-4">
+                    <button id="vcf-download" class="w-full bg-green-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-600 disabled:bg-gray-400 transition-colors" disabled>VCF 다운로드</button>
+                    <button id="qr-download" class="w-full bg-gray-800 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-900 disabled:bg-gray-400 transition-colors" disabled>QR 코드 생성</button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // --- DOM Elements ---
+        const modeRadios = document.querySelectorAll('input[name="mode"]');
+        const uploadContainer = document.getElementById('upload-container');
+        const uploadPanelFront = document.getElementById('upload-panel-front');
+        const uploadPanelBack = document.getElementById('upload-panel-back');
+        const fileInputFront = document.getElementById('file-input-front');
+        const fileInputBack = document.getElementById('file-input-back');
+        const uploadTextFront = document.getElementById('upload-text-front');
+        const fileNameFront = document.getElementById('file-name-front');
+        const fileNameBack = document.getElementById('file-name-back');
+        const processButton = document.getElementById('process-button');
+        const loadingIndicator = document.getElementById('loading-indicator');
+        const resultArea = document.getElementById('result-area');
+        const vcfButton = document.getElementById('vcf-download');
+        const qrButton = document.getElementById('qr-download');
+
+        // --- State Management ---
+        let currentMode = 'single';
+        let frontFiles = [];
+        let backFile = null;
+
+        // --- UI Control Functions ---
+        function updateUIMode(mode) {
+            currentMode = mode;
+            // Reset everything
+            frontFiles = [];
+            backFile = null;
+            fileNameFront.textContent = '';
+            fileNameBack.textContent = '';
+            fileInputFront.value = '';
+            fileInputBack.value = '';
+            processButton.disabled = true;
+
+            uploadPanelBack.classList.add('hidden');
+            fileInputFront.removeAttribute('multiple');
+            uploadTextFront.textContent = '이미지를 드래그 앤 드롭하거나 클릭';
+
+            if (mode === 'two-sided') {
+                uploadPanelBack.classList.remove('hidden');
+                uploadTextFront.textContent = '앞면 이미지를 드래그 앤 드롭하거나 클릭';
+            } else if (mode === 'batch') {
+                fileInputFront.setAttribute('multiple', true);
+                uploadTextFront.textContent = '여러 이미지를 드래그 앤 드롭하거나 클릭';
+            }
+        }
+        
+        function updateProcessButtonState() {
+            if (currentMode === 'single' && frontFiles.length === 1) {
+                processButton.disabled = false;
+            } else if (currentMode === 'two-sided' && frontFiles.length === 1 && backFile) {
+                processButton.disabled = false;
+            } else if (currentMode === 'batch' && frontFiles.length > 0) {
+                processButton.disabled = false;
+            } else {
+                processButton.disabled = true;
+            }
+        }
+
+        // --- Event Listeners ---
+        modeRadios.forEach(radio => {
+            radio.addEventListener('change', (e) => updateUIMode(e.target.value));
+        });
+
+        function setupUploader(panel, input, fileHandler) {
+            panel.addEventListener('click', () => input.click());
+            panel.addEventListener('dragover', e => { e.preventDefault(); panel.classList.add('drag-over'); });
+            panel.addEventListener('dragleave', () => panel.classList.remove('drag-over'));
+            panel.addEventListener('drop', e => {
+                e.preventDefault();
+                panel.classList.remove('drag-over');
+                fileHandler(e.dataTransfer.files);
+            });
+            input.addEventListener('change', e => fileHandler(e.target.files));
+        }
+
+        setupUploader(uploadPanelFront, fileInputFront, (files) => {
+            if(currentMode === 'batch') {
+                frontFiles = [...files];
+                fileNameFront.textContent = `${files.length}개 파일 선택됨`;
+            } else {
+                frontFiles = [files[0]];
+                fileNameFront.textContent = files[0].name;
+            }
+            updateProcessButtonState();
+        });
+        
+        setupUploader(uploadPanelBack, fileInputBack, (files) => {
+            backFile = files[0];
+            fileNameBack.textContent = files[0].name;
+            updateProcessButtonState();
+        });
+
+        processButton.addEventListener('click', async () => {
+            loadingIndicator.classList.remove('hidden');
+            processButton.classList.add('hidden');
+            resultArea.innerHTML = '';
+            vcfButton.disabled = true;
+            qrButton.disabled = true;
+
+            const formData = new FormData();
+            let endpoint = '';
+
+            if (currentMode === 'single' || currentMode === 'batch') {
+                frontFiles.forEach(file => formData.append('images', file));
+                endpoint = '/api/process-batch';
+            } else if (currentMode === 'two-sided') {
+                formData.append('frontImage', frontFiles[0]);
+                formData.append('backImage', backFile);
+                endpoint = '/api/process-two-sided';
+            }
+            
+            // --- FAKE API CALL FOR DEMONSTRATION ---
+            try {
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                const mockData = generateMockData();
+                displayResults(mockData);
+            } catch (error) {
+                 resultArea.innerHTML = `<p class="text-red-500">오류가 발생했습니다.</p>`;
+            } finally {
+                loadingIndicator.classList.add('hidden');
+                processButton.classList.remove('hidden');
+            }
+        });
+
+        function displayResults(data) {
+            if (data.success && data.results.length > 0) {
+                resultArea.innerHTML = '';
+                data.results.forEach(result => {
+                    const card = document.createElement('div');
+                    card.className = 'p-3 mb-2 border rounded-md bg-white';
+                    
+                    const contactInfo = result.data;
+                    const keyMap = { name: "이름", title: "직책", company: "회사", office_phone: "사무실 전화", email: "이메일", address: "주소" };
+
+                    for (const [key, value] of Object.entries(contactInfo)) {
+                        if (value) {
+                            const p = document.createElement('p');
+                            p.className = 'text-sm text-gray-800';
+                            p.innerHTML = `<strong class="font-semibold text-gray-600">${keyMap[key] || key}:</strong> ${value}`;
+                            card.appendChild(p);
+                        }
+                    }
+                    resultArea.appendChild(card);
+                });
+                vcfButton.disabled = false;
+                qrButton.disabled = false;
+            } else {
+                 resultArea.innerHTML = '<p class="text-orange-500">결과를 추출하지 못했습니다.</p>';
+            }
+        }
+
+        // --- Mock Data Generator ---
+        function generateMockData() {
+            const names = ["김민준", "이서연", "박도윤", "최지우"];
+            const companies = ["AI 솔루션", "데이터 혁신", "퓨처테크", "스마트 시스템"];
+            let results = [];
+            const count = currentMode === 'batch' ? frontFiles.length : 1;
+            for(let i=0; i < count; i++) {
+                const name = names[i % names.length];
+                const company = companies[i % companies.length];
+                results.push({
+                    data: {
+                        name: name,
+                        title: "연구원",
+                        company: company,
+                        office_phone: `02-123-456${i}`,
+                        email: `${name.replace(' ','').toLowerCase()}@${company.replace(' ','')}.com`
+                    }
+                });
+            }
+            return { success: true, results: results };
+        }
+    </script>
+</body>
+</html>
+
