@@ -1,0 +1,24 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "app.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "app.py"
+    }
+  ],
+  "env": {
+    "NAVER_OCR_SECRET_KEY": "@naver_ocr_secret_key",
+    "NAVER_OCR_INVOKE_URL": "@naver_ocr_invoke_url"
+  },
+  "functions": {
+    "app.py": {
+      "maxDuration": 60
+    }
+  }
+}
