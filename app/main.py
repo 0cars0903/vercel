@@ -42,11 +42,13 @@ app = FastAPI()
 origins = [
     "http://localhost",
     "http://localhost:5173",
-    "https://vercel-tawny-delta.vercel.app/"  # 실제 배포 도메인 추가
+    "http://localhost:8000",
+    "https://vercel-74ua.vercel.app"  # 실제 배포 도메인 추가
 ]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,  # 👈 이 부분을 ["*"]에서 origins 변수로 변경!
+    allow_origins=["*"],   # 개발 단계에서는 * (배포시엔 특정 도메인만)
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
