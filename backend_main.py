@@ -29,7 +29,7 @@ origins = [
     "http://localhost",
     "http://localhost:5500",  # Live Server 등 로컬 테스트 포트
     # Vercel 배포 후 실제 프런트엔드 주소를 여기에 추가하세요.
-    # 예: "https://your-project-name.vercel.app"
+    # "https://vercel-asrrp2uk7-junhees-projects-5f5f2302.vercel.app/
 ]
 
 app.add_middleware(
@@ -76,7 +76,7 @@ def ocr_agent(image_path: str) -> list[dict]:
 def extract_structured_info_with_retry(raw_text: str, model_name: str = 'mistral:latest') -> dict:
     """Ollama를 사용하여 텍스트에서 구조화된 정보 추출"""
     # ... (기존 app.py의 extract_structured_info_with_retry 함수 내용과 동일)
-    prompt = f"""You are an expert business card information extractor... Required JSON structure: {{"name": "", "title": "", "company": "", "phone": "", "email": "", "address": ""}} ... --- Text to Analyze --- {raw_text}"""
+    prompt = f"""You are an expert business card information extractor... Required JSON structure: {{"name": "", "title": "", "company": "","office_phone": "", "perenal_phone": "", "email": "", "address": ""}} ... --- Text to Analyze --- {raw_text}"""
     try:
         response = ollama.chat(model=model_name, messages=[{'role': 'user', 'content': prompt}], format='json', options={'temperature': 0.1})
         content = response['message']['content']

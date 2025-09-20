@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Business Card Processor v2.3</title>
+    <title>AI Business Card Processor v2.4</title>
     <style>
         :root {
             --primary-color: #1877f2;
@@ -31,7 +31,6 @@
         header { text-align: center; margin-bottom: 2rem; }
         .main-layout {
             display: grid;
-            /* 화면이 넓을 때 세 개의 패널이 동일한 가로 길이를 갖도록 수정 */
             grid-template-columns: repeat(3, 1fr);
             gap: 2rem;
             align-items: stretch;
@@ -112,30 +111,21 @@
         
         .action-buttons { margin-top: 1.5rem; display: flex; gap: 0.5rem; justify-content: center; }
         
-        /* 화면 너비에 따른 반응형 레이아웃 수정 */
         @media (max-width: 1200px) {
-            .main-layout {
-                grid-template-columns: 1fr 1fr; /* 중간 크기 화면: 2열 */
-            }
-            #results-panel {
-                grid-column: span 2; /* 결과 패널을 넓게 사용 */
-            }
+            .main-layout { grid-template-columns: 1fr 1fr; }
+            #results-panel { grid-column: span 2; }
         }
         @media (max-width: 768px) {
-            .main-layout {
-                grid-template-columns: 1fr; /* 작은 화면: 1열 */
-            }
-            #results-panel {
-                grid-column: auto; /* span 속성 초기화 */
-            }
+            .main-layout { grid-template-columns: 1fr; }
+            #results-panel { grid-column: auto; }
         }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>AI 명함 처리 시스템 v2.3</h1>
-            <p>UI 레이아웃이 개선되었습니다.</p>
+            <h1>명함 처리</h1>
+            <p>부제</p>
         </header>
 
         <div class="main-layout">
@@ -196,6 +186,17 @@
                     </div>
                 </div>
                 <div id="single-result-ui" class="hidden">
+                    <!-- 양면 처리 시 이미지 미리보기를 위한 영역 -->
+                    <div id="single-preview-container" style="display: flex; gap: 1rem; margin-bottom: 1.5rem; justify-content: center;">
+                        <div class="preview-item">
+                            <p style="text-align: center; font-size: 0.9rem; color: var(--text-secondary);">앞면</p>
+                            <img id="single-preview-front" src="" alt="Front Preview" style="width: 120px; height: 75px; object-fit: cover; border-radius: 4px; border: 1px solid var(--border-color);">
+                        </div>
+                        <div class="preview-item">
+                            <p style="text-align: center; font-size: 0.9rem; color: var(--text-secondary);">뒷면</p>
+                            <img id="single-preview-back" src="" alt="Back Preview" style="width: 120px; height: 75px; object-fit: cover; border-radius: 4px; border: 1px solid var(--border-color);">
+                        </div>
+                    </div>
                     <div class="qr-code" id="qr-code-display"></div>
                     <div class="action-buttons">
                         <a href="#" id="vcf-download-link" class="btn btn-primary">VCF 다운로드</a>
@@ -266,7 +267,12 @@
         document.getElementById('batch-item-details').classList.add('hidden');
         updatePanelsVisibility();
     }
-    function resetSingleState() { singleResultData = null; updatePanelsVisibility(); }
+    function resetSingleState() { 
+        singleResultData = null; 
+        document.getElementById('single-preview-front').src = '';
+        document.getElementById('single-preview-back').src = '';
+        updatePanelsVisibility(); 
+    }
 
     function initializeEventListeners() {
         const uploadConfigs = [
@@ -326,6 +332,15 @@
             });
         
         document.getElementById('download-notice').textContent = batchData.length >= 2 ? `총 ${batchData.length}개의 VCF가 zip 파일로 다운로드됩니다.` : 'VCF 파일이 다운로드됩니다.';
+        updatePanelsVisibility();
+    }
+
+    // 양면 처리 결과 렌더링 함수
+    function renderSingleResult() {
+        if (!singleResultData) return;
+        document.getElementById('single-preview-front').src = singleResultData.frontImagePreview || '';
+        document.getElementById('single-preview-back').src = singleResultData.backImagePreview || '';
+        renderEditor(singleResultData, true);
         updatePanelsVisibility();
     }
     
@@ -402,24 +417,46 @@
         }
     }
 
+    // 파일을 Data URL로 읽는 헬퍼 함수
+    function readFileAsDataURL(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+    }
+
     async function processTwoSidedFiles() {
         const frontFile = document.getElementById('front-file-input').files[0];
         const backFile = document.getElementById('back-file-input').files[0];
         if (!frontFile || !backFile) return alert('앞면과 뒷면 파일을 모두 선택해주세요.');
         
         resetSingleState();
+
+        // 미리보기를 위해 파일을 미리 읽음
+        const frontPreviewUrl = await readFileAsDataURL(frontFile);
+        const backPreviewUrl = await readFileAsDataURL(backFile);
+        
         const formData = new FormData();
         formData.append('frontImage', frontFile);
         formData.append('backImage', backFile);
         
         try {
             const result = await processFiles(`${API_BASE_URL}/api/process-two-sided`, formData);
-            await generateQrAndVcf(result.contactInfo, 'single', false);
+            
+            // 결과 데이터와 미리보기 URL을 함께 저장
+            singleResultData = {
+                ...result.contactInfo,
+                frontImagePreview: frontPreviewUrl,
+                backImagePreview: backPreviewUrl
+            };
+            
+            await generateQrAndVcf(singleResultData, 'single', false);
             updateLoaderStep(2, 'completed');
             
-            singleResultData = result.contactInfo;
-            renderEditor(singleResultData, true);
-            updatePanelsVisibility();
+            renderSingleResult();
+
         } catch (error) {
             alert('처리 중 오류가 발생했습니다: ' + error.message);
         } finally {
@@ -470,7 +507,8 @@
         if (currentMode === 'batch') {
             renderBatchResults(); selectItem(activeItemId);
         } else {
-            renderEditor(dataObject, true); generateQrAndVcf(dataObject, 'single');
+            renderSingleResult();
+            generateQrAndVcf(dataObject, 'single');
         }
     }
 
@@ -508,6 +546,8 @@
     </script>
 </body>
 </html>
+
+
 
 
 
