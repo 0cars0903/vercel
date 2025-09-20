@@ -31,6 +31,14 @@ dotenv.load_dotenv()
 app = FastAPI()
 
 # --- CORS 설정 ---
+origins = [
+    "http://localhost",
+    "http://localhost:8001",
+    # ↓↓↓↓↓↓↓ 이 부분을 추가하거나 수정하세요! ↓↓↓↓↓↓↓
+    "https://vercel-dq1z2loe4-junhees-projects-5f5f2302.vercel.app/" 
+]
+
+# --- CORS 설정 ---
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
