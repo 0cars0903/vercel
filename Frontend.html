@@ -1,37 +1,9 @@
-from flask import Flask, request, jsonify, render_template_string, send_file, make_response
-import os
-import json
-import re
-import time
-import base64
-import requests
-import qrcode
-from datetime import datetime
-import io
-from werkzeug.utils import secure_filename
-import tempfile
-import zipfile
-
-# pipeline_card.py의 핵심 로직 통합
-import ollama
-import dotenv
-dotenv.load_dotenv()
-
-app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 32 * 1024 * 1024  # 32MB max file size
-
-# 환경 변수
-NAVER_OCR_SECRET_KEY = os.environ.get('NAVER_OCR_SECRET_KEY')
-NAVER_OCR_INVOKE_URL = os.environ.get('NAVER_OCR_INVOKE_URL')
-
-# HTML 템플릿 (수정된 버전)
-HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Business Card Processor v2.2</title>
+    <title>AI Business Card Processor v2.3</title>
     <style>
         :root {
             --primary-color: #1877f2;
@@ -57,16 +29,17 @@ HTML_TEMPLATE = """
         }
         .container { max-width: 1400px; margin: 0 auto; padding: 2rem; }
         header { text-align: center; margin-bottom: 2rem; }
-        .main-layout { 
-            display: grid; 
-            grid-template-columns: 1fr 1.2fr 1fr; 
-            gap: 2rem; 
-            align-items: stretch; /* This makes all panels equal height */
+        .main-layout {
+            display: grid;
+            /* 화면이 넓을 때 세 개의 패널이 동일한 가로 길이를 갖도록 수정 */
+            grid-template-columns: repeat(3, 1fr);
+            gap: 2rem;
+            align-items: stretch;
         }
-        .panel { 
-            background: var(--panel-bg); 
-            border-radius: var(--border-radius); 
-            box-shadow: var(--shadow); 
+        .panel {
+            background: var(--panel-bg);
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow);
             padding: 2rem;
             display: flex;
             flex-direction: column;
@@ -107,20 +80,9 @@ HTML_TEMPLATE = """
         .result-item-info p { margin: 0; }
         .qr-code img { max-width: 150px; margin: 1rem auto; display: block; }
         
-        /* Panel Content Growth */
-        #editor-panel > div, #results-panel > div {
-            flex-grow: 1;
-            display: flex;
-            flex-direction: column;
-        }
-        #editor-empty-state, #results-empty-state {
-            flex-grow: 1;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
+        #editor-panel > div, #results-panel > div { flex-grow: 1; display: flex; flex-direction: column; }
+        #editor-empty-state, #results-empty-state { flex-grow: 1; display: flex; align-items: center; justify-content: center; text-align: center; }
 
-        /* Dynamic Loader Styles */
         .loader {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(255,255,255,0.9); backdrop-filter: blur(5px);
@@ -149,15 +111,31 @@ HTML_TEMPLATE = """
         @keyframes spin { 100% { transform: rotate(360deg); } }
         
         .action-buttons { margin-top: 1.5rem; display: flex; gap: 0.5rem; justify-content: center; }
-        @media (max-width: 1200px) { .main-layout { grid-template-columns: 1fr 1fr; } #editor-panel { grid-column: span 2; } }
-        @media (max-width: 768px) { .main-layout { grid-template-columns: 1fr; } }
+        
+        /* 화면 너비에 따른 반응형 레이아웃 수정 */
+        @media (max-width: 1200px) {
+            .main-layout {
+                grid-template-columns: 1fr 1fr; /* 중간 크기 화면: 2열 */
+            }
+            #results-panel {
+                grid-column: span 2; /* 결과 패널을 넓게 사용 */
+            }
+        }
+        @media (max-width: 768px) {
+            .main-layout {
+                grid-template-columns: 1fr; /* 작은 화면: 1열 */
+            }
+            #results-panel {
+                grid-column: auto; /* span 속성 초기화 */
+            }
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>AI 명함 처리 시스템 v2.2</h1>
-            <p>동적 로딩 UI 및 레이아웃이 개선되었습니다.</p>
+            <h1>AI 명함 처리 시스템 v2.3</h1>
+            <p>UI 레이아웃이 개선되었습니다.</p>
         </header>
 
         <div class="main-layout">
@@ -201,7 +179,6 @@ HTML_TEMPLATE = """
             <!-- Right Panel: Results -->
             <div class="panel" id="results-panel">
                 <h2>3. 결과 확인</h2>
-                <!-- Batch Results -->
                 <div id="batch-results-ui" class="hidden">
                     <input type="text" class="input-group" id="filter-input" placeholder="이름, 회사 등으로 필터링..." onkeyup="filterResults()">
                     <ul class="result-list" id="result-list"></ul>
@@ -218,7 +195,6 @@ HTML_TEMPLATE = """
                          <p id="download-notice" style="font-size: 0.9rem; color: var(--text-secondary); margin-top: 0.5rem; text-align:center;"></p>
                     </div>
                 </div>
-                <!-- Single (Two-sided) Results -->
                 <div id="single-result-ui" class="hidden">
                     <div class="qr-code" id="qr-code-display"></div>
                     <div class="action-buttons">
@@ -226,7 +202,6 @@ HTML_TEMPLATE = """
                         <a href="#" id="qr-download-link" class="btn btn-secondary">QR 코드 저장</a>
                     </div>
                 </div>
-                <!-- Empty State -->
                 <div id="results-empty-state">
                     <p>좌측에서 명함을 업로드하면<br>여기에 결과가 표시됩니다.</p>
                 </div>
@@ -247,6 +222,9 @@ HTML_TEMPLATE = """
     </div>
     
     <script>
+    // --- Configuration ---
+    const API_BASE_URL = 'http://localhost:8000';
+
     // --- State Management ---
     let currentMode = 'batch';
     let batchData = [];
@@ -281,7 +259,6 @@ HTML_TEMPLATE = """
         document.getElementById('editor-empty-state').classList.toggle('hidden', showEditor);
     }
     
-    // --- Reset Functions ---
     function resetBatchState() {
         batchData = []; activeItemId = null;
         document.getElementById('result-list').innerHTML = '';
@@ -291,7 +268,6 @@ HTML_TEMPLATE = """
     }
     function resetSingleState() { singleResultData = null; updatePanelsVisibility(); }
 
-    // --- Event Listeners ---
     function initializeEventListeners() {
         const uploadConfigs = [
             { areaId: 'batch-upload-area', inputId: 'batch-file-input' },
@@ -321,12 +297,9 @@ HTML_TEMPLATE = """
         area.style.backgroundColor = files.length > 0 ? '#e7f3ff' : '#f7f8fa';
     }
 
-    // --- Dynamic Loader ---
     function updateLoaderStep(stepIndex, status) {
         const steps = document.querySelectorAll('.loader-steps li');
-        if (steps[stepIndex]) {
-            steps[stepIndex].className = status || '';
-        }
+        if (steps[stepIndex]) steps[stepIndex].className = status || '';
     }
 
     function showLoader(isProcessing = true) {
@@ -337,7 +310,6 @@ HTML_TEMPLATE = """
     }
     const hideLoader = () => document.getElementById('loader').classList.add('hidden');
 
-    // --- UI Rendering ---
     function renderBatchResults() {
         const listEl = document.getElementById('result-list');
         listEl.innerHTML = '';
@@ -359,17 +331,14 @@ HTML_TEMPLATE = """
     
     function filterResults() { renderBatchResults(); }
 
-    async function selectItem(itemId) {
+    function selectItem(itemId) {
         activeItemId = itemId;
         const item = batchData.find(d => d.id === itemId);
         if (!item) return;
 
         renderBatchResults();
         renderEditor(item.data, false);
-        
-        // 사용자의 요청에 따라, 항목 선택 시 로더가 표시되지 않도록 수정했습니다.
         generateQrAndVcf(item.data, 'batch', false);
-        
         document.getElementById('batch-item-details').classList.remove('hidden');
         updatePanelsVisibility();
     }
@@ -386,30 +355,29 @@ HTML_TEMPLATE = """
         }
     }
     
-    // --- API Calls ---
     async function processFiles(apiEndpoint, formData) {
         showLoader(true);
         try {
-            updateLoaderStep(0, 'in-progress'); // Step 1: OCR
-            await new Promise(r => setTimeout(r, 500)); // Simulate work
-            
+            updateLoaderStep(0, 'in-progress');
+            await new Promise(r => setTimeout(r, 500)); 
             updateLoaderStep(0, 'completed');
-            updateLoaderStep(1, 'in-progress'); // Step 2: Extract
+            updateLoaderStep(1, 'in-progress');
             
             const response = await fetch(apiEndpoint, { method: 'POST', body: formData });
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || 'Server error');
+            }
             const result = await response.json();
 
             if (!result.success) throw new Error(result.error);
             
             updateLoaderStep(1, 'completed');
-            updateLoaderStep(2, 'in-progress'); // Step 3: VCF/QR
-            
-            const contactInfo = result.contactInfo || (result.results ? result.results : null);
-            if (!contactInfo) throw new Error('No contact info processed.');
-            
+            updateLoaderStep(2, 'in-progress');
             return result;
         } finally {
-            // Loader will be hidden by the calling function after VCF generation
+            // Loader hidden by the calling function
         }
     }
 
@@ -422,9 +390,9 @@ HTML_TEMPLATE = """
         for(const file of files) formData.append('images', file);
         
         try {
-            const result = await processFiles('/api/process-batch', formData);
+            const result = await processFiles(`${API_BASE_URL}/api/process-batch`, formData);
             batchData = result.results;
-            updateLoaderStep(2, 'completed'); // Mark final step as complete for batch
+            updateLoaderStep(2, 'completed');
             renderBatchResults();
         } catch (error) {
             alert('오류: ' + error.message);
@@ -445,9 +413,8 @@ HTML_TEMPLATE = """
         formData.append('backImage', backFile);
         
         try {
-            const result = await processFiles('/api/process-two-sided', formData);
+            const result = await processFiles(`${API_BASE_URL}/api/process-two-sided`, formData);
             await generateQrAndVcf(result.contactInfo, 'single', false);
-            
             updateLoaderStep(2, 'completed');
             
             singleResultData = result.contactInfo;
@@ -465,20 +432,20 @@ HTML_TEMPLATE = """
         if (batchData.length === 0) return alert('다운로드할 데이터가 없습니다.');
         showLoader(false);
         try {
-            const response = await fetch('/api/download-batch', {
+            const response = await fetch(`${API_BASE_URL}/api/download-batch`, {
                 method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ items: batchData })
             });
             if (response.ok) {
                 const blob = await response.blob(), url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
+                const a = document.createElement('a'); a.style.display = 'none'; a.href = url;
                 const disposition = response.headers.get('Content-Disposition');
                 let filename = 'contacts.zip';
                 if (disposition) {
                     const match = disposition.match(/filename="(.+)"/);
                     if (match) filename = match[1];
                 }
-                a.download = filename; a.click(); window.URL.revokeObjectURL(url);
+                a.download = filename; document.body.appendChild(a); a.click();
+                window.URL.revokeObjectURL(url); document.body.removeChild(a);
             } else alert('다운로드 실패');
         } catch (error) { alert('다운로드 중 오류가 발생했습니다: ' + error.message); } 
         finally { hideLoader(); }
@@ -510,7 +477,7 @@ HTML_TEMPLATE = """
     async function generateQrAndVcf(data, type, showOwnLoader = true) {
         if (showOwnLoader) showLoader(false);
         try {
-            const response = await fetch('/api/generate-vcf-qr', {
+            const response = await fetch(`${API_BASE_URL}/api/generate-vcf-qr`, {
                 method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ contactData: data })
             });
             const result = await response.json();
@@ -531,6 +498,9 @@ HTML_TEMPLATE = """
             const qrLink = document.getElementById(ids.qrLink);
             qrLink.href = qrImgSrc;
             qrLink.download = `${name}_qrcode.png`;
+        } catch(error) {
+            console.error("QR/VCF Generation Error:", error);
+            alert("QR/VCF 생성 중 오류가 발생했습니다.");
         } finally {
             if (showOwnLoader) hideLoader();
         }
@@ -538,324 +508,6 @@ HTML_TEMPLATE = """
     </script>
 </body>
 </html>
-"""
 
-# ==========================================================================
-# 명함 처리 에이전트 및 헬퍼 함수
-# ==========================================================================
-
-def ocr_agent(image_path: str) -> list[dict]:
-    """NAVER CLOVA OCR API를 사용하여 이미지에서 텍스트 추출"""
-    print(f"\n[ OCR Agent ] Processing '{os.path.basename(image_path)}'...")
-    
-    if not NAVER_OCR_SECRET_KEY or not NAVER_OCR_INVOKE_URL:
-        print("[Error] NAVER CLOVA OCR 환경 변수가 설정되지 않았습니다.")
-        return []
-    
-    request_body = {
-        'version': 'V2',
-        'requestId': 'NCP-OCR-ID-' + str(int(time.time() * 1000)),
-        'timestamp': int(time.time() * 1000),
-        'lang': 'ko',
-        'images': [{
-            'format': os.path.splitext(image_path)[1][1:].upper(),
-            'name': os.path.basename(image_path)
-        }]
-    }
-    
-    headers = {'X-OCR-Secret': NAVER_OCR_SECRET_KEY}
-    
-    try:
-        with open(image_path, 'rb') as img_file:
-            files = {
-                'file': (os.path.basename(image_path), img_file, 'image/' + os.path.splitext(image_path)[1][1:].lower()),
-                'message': (None, json.dumps(request_body).encode('UTF-8'), 'application/json')
-            }
-            response = requests.post(NAVER_OCR_INVOKE_URL, headers=headers, files=files)
-            response.raise_for_status()
-        
-        result_json = response.json()
-        full_text = ""
-        
-        for image_result in result_json.get('images', []):
-            for field in image_result.get('fields', []):
-                full_text += field.get('inferText', '') + " "
-        
-        # 간단한 문장 분리
-        sentences = [s.strip() for s in full_text.strip().replace('\n', ' ').split('.') if s.strip()]
-        return [{'id': idx + 1, 'text': sentence} for idx, sentence in enumerate(sentences)]
-        
-    except Exception as e:
-        print(f"[OCR Error] {e}")
-        return []
-
-def extract_structured_info_with_retry(raw_text: str, model_name: str = 'mistral:latest') -> dict:
-    """Ollama를 사용하여 텍스트에서 구조화된 정보 추출"""
-    prompt = f"""You are an expert business card information extractor. From the provided text, extract the required information into a valid JSON format. For missing information, use an empty string "". Return ONLY valid JSON.
-
-    Required JSON structure: {{"name": "", "title": "", "company": "", "phone": "", "email": "", "address": ""}}
-    
-    --- Text to Analyze ---
-    {raw_text}"""
-    
-    try:
-        response = ollama.chat(
-            model=model_name,
-            messages=[{'role': 'user', 'content': prompt}],
-            format='json',
-            options={'temperature': 0.1}
-        )
-        
-        content = response['message']['content']
-        if isinstance(content, str):
-            return json.loads(content)
-        return content
-        
-    except Exception as e:
-        print(f"[LLM Error] {e}")
-        return {"name": "", "title": "", "company": "", "phone": "", "email": "", "address": ""}
-
-def two_sided_extract_agent(front_text: str, back_text: str, model_name: str = 'mistral:latest') -> dict:
-    """양면 명함 분석을 위한 Ollama 에이전트"""
-    combined_text = f"--- Front Side (Korean) ---\n{front_text}\n\n--- Back Side (English) ---\n{back_text}"
-    
-    prompt = f"""You are an expert business card extractor for two-sided (Korean/English) cards. The provided text contains text from both sides. Extract the information into the following JSON structure.
-    
-    - Fill `_ko` fields from Korean text and `_en` fields from English text.
-    - For missing information, use an empty string "".
-    - `phone` and `email` are usually the same on both sides.
-    - Return ONLY valid JSON.
-    
-    Required JSON structure: {{"name_ko": "", "name_en": "", "title_ko": "", "title_en": "", "company_ko": "", "company_en": "", "phone": "", "email": "", "address_ko": "", "address_en": ""}}
-    
-    --- Combined Text to Analyze ---
-    {combined_text}"""
-    
-    try:
-        response = ollama.chat(
-            model=model_name,
-            messages=[{'role': 'user', 'content': prompt}],
-            format='json',
-            options={'temperature': 0.1}
-        )
-        
-        content = response['message']['content']
-        if isinstance(content, str):
-            return json.loads(content)
-        return content
-
-    except Exception as e:
-        print(f"[Two-sided LLM Error] {e}")
-        return {"name_ko": "", "name_en": "", "title_ko": "", "title_en": "", "company_ko": "", "company_en": "", "phone": "", "email": "", "address_ko": "", "address_en": ""}
-
-
-def generate_vcf_content(data: dict) -> str:
-    """양면 지원 VCF 생성 함수"""
-    vcf_lines = ["BEGIN:VCARD", "VERSION:3.0"]
-    
-    name_ko = data.get('name_ko') or data.get('name', '')
-    name_en = data.get('name_en', '')
-    
-    # FN과 N 필드 설정
-    if name_ko and name_en:
-        vcf_lines.append(f"FN;CHARSET=UTF-8:{name_ko} {name_en}")
-        vcf_lines.append(f"N;CHARSET=UTF-8:{name_ko};{name_en};;;")
-    elif name_ko:
-        vcf_lines.append(f"FN;CHARSET=UTF-8:{name_ko}")
-        vcf_lines.append(f"N;CHARSET=UTF-8:{name_ko};;;;")
-    elif name_en:
-        vcf_lines.append(f"FN;CHARSET=UTF-8:{name_en}")
-        vcf_lines.append(f"N;CHARSET=UTF-8:{name_en};;;;")
-
-    title_ko = data.get('title_ko') or data.get('title', '')
-    title_en = data.get('title_en', '')
-    if title_ko or title_en:
-        full_title = f"{title_ko}{' / ' if title_ko and title_en else ''}{title_en}"
-        vcf_lines.append(f"TITLE;CHARSET=UTF-8:{full_title}")
-    
-    company_ko = data.get('company_ko') or data.get('company', '')
-    company_en = data.get('company_en', '')
-    if company_ko or company_en:
-        full_company = f"{company_ko}{' / ' if company_ko and company_en else ''}{company_en}"
-        vcf_lines.append(f"ORG;CHARSET=UTF-8:{full_company}")
-    
-    # 공통 필드
-    if data.get('phone'):
-        vcf_lines.append(f"TEL;TYPE=WORK,VOICE:{data['phone']}")
-    if data.get('email'):
-        vcf_lines.append(f"EMAIL;TYPE=WORK:{data['email']}")
-    
-    address = data.get('address_ko', '') or data.get('address', '')
-    if address:
-        vcf_lines.append(f"ADR;TYPE=WORK;CHARSET=UTF-8:;;{address};;;;")
-    
-    vcf_lines.append(f"REV:{datetime.now().strftime('%Y%m%dT%H%M%SZ')}")
-    vcf_lines.append("END:VCARD")
-    
-    return '\n'.join(vcf_lines)
-
-def generate_qr_code(vcf_content):
-    """QR 코드 생성 함수"""
-    qr = qrcode.QRCode(
-        version=1,
-        error_correction=qrcode.constants.ERROR_CORRECT_L,
-        box_size=10,
-        border=4
-    )
-    qr.add_data(vcf_content)
-    qr.make(fit=True)
-    
-    qr_image = qr.make_image(fill_color="black", back_color="white")
-    img_buffer = io.BytesIO()
-    qr_image.save(img_buffer, format='PNG')
-    return base64.b64encode(img_buffer.getvalue()).decode()
-
-# ==========================================================================
-# Flask API Endpoints
-# ==========================================================================
-
-@app.route('/')
-def index():
-    """메인 페이지"""
-    return render_template_string(HTML_TEMPLATE)
-
-@app.route('/api/process-batch', methods=['POST'])
-def process_batch():
-    """다중 명함 일괄 처리 API"""
-    try:
-        files = request.files.getlist('images')
-        if not files or files[0].filename == '':
-            return jsonify({'success': False, 'error': '이미지 파일이 필요합니다.'})
-
-        results = []
-        with tempfile.TemporaryDirectory() as temp_dir:
-            for idx, file in enumerate(files):
-                filename = secure_filename(file.filename)
-                temp_path = os.path.join(temp_dir, filename)
-                file.save(temp_path)
-                
-                ocr_list = ocr_agent(temp_path)
-                if not ocr_list:
-                    continue
-                
-                full_text = ' '.join([item['text'] for item in ocr_list])
-                contact_info = extract_structured_info_with_retry(full_text)
-                
-                file.seek(0)
-                thumbnail = base64.b64encode(file.read()).decode('utf-8')
-
-                results.append({
-                    'id': f"card-{int(time.time() * 1000)}-{idx}",
-                    'source': filename,
-                    'data': contact_info,
-                    'thumbnail': thumbnail
-                })
-                
-        return jsonify({'success': True, 'results': results})
-        
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
-
-@app.route('/api/process-two-sided', methods=['POST'])
-def process_two_sided():
-    """양면 명함 처리 API"""
-    try:
-        front_file = request.files.get('frontImage')
-        back_file = request.files.get('backImage')
-        
-        if not front_file or not back_file:
-            return jsonify({'success': False, 'error': '앞면과 뒷면 이미지가 모두 필요합니다.'})
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            front_path = os.path.join(temp_dir, secure_filename(front_file.filename))
-            back_path = os.path.join(temp_dir, secure_filename(back_file.filename))
-            front_file.save(front_path)
-            back_file.save(back_path)
-
-            front_ocr = ocr_agent(front_path)
-            back_ocr = ocr_agent(back_path)
-            
-            if not front_ocr or not back_ocr:
-                return jsonify({'success': False, 'error': '한쪽 또는 양쪽 면의 OCR 처리에 실패했습니다.'})
-            
-            front_text = ' '.join([item['text'] for item in front_ocr])
-            back_text = ' '.join([item['text'] for item in back_ocr])
-
-            contact_info = two_sided_extract_agent(front_text, back_text)
-        
-        return jsonify({'success': True, 'contactInfo': contact_info})
-        
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
-
-@app.route('/api/generate-vcf-qr', methods=['POST'])
-def generate_vcf_qr():
-    """단일 VCF 및 QR 생성 API"""
-    try:
-        contact_data = request.get_json().get('contactData', {})
-        vcf_content = generate_vcf_content(contact_data)
-        qr_base64 = generate_qr_code(vcf_content)
-        return jsonify({'success': True, 'vcfContent': vcf_content, 'qrCode': qr_base64})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
-
-@app.route('/api/download-batch', methods=['POST'])
-def download_batch():
-    """VCF 파일 일괄 다운로드 (압축) API"""
-    try:
-        items_to_download = request.get_json().get('items', [])
-        if not items_to_download:
-            return jsonify({'success': False, 'error': '다운로드할 항목이 없습니다.'})
-
-        if len(items_to_download) == 1:
-            item = items_to_download[0]
-            vcf_content = generate_vcf_content(item['data'])
-            name = item['data'].get('name_ko') or item['data'].get('name', 'contact')
-            safe_name = re.sub(r'[^\w\s-]', '', name).strip().replace(' ', '_')
-            
-            buffer = io.BytesIO(vcf_content.encode('utf-8'))
-            buffer.seek(0)
-            
-            return send_file(buffer, as_attachment=True, download_name=f"{safe_name}.vcf", mimetype='text/vcard')
-
-        memory_file = io.BytesIO()
-        with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
-            for item in items_to_download:
-                vcf_content = generate_vcf_content(item['data'])
-                name = item['data'].get('name_ko') or item['data'].get('name', 'contact')
-                safe_name = re.sub(r'[^\w\s-]', '', name).strip().replace(' ', '_')
-                zf.writestr(f"{safe_name}.vcf", vcf_content)
-        
-        memory_file.seek(0)
-        zip_filename = f"contacts_{datetime.now().strftime('%Y%m%d')}.zip"
-        return send_file(memory_file, as_attachment=True, download_name=zip_filename, mimetype='application/zip')
-        
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
-
-@app.route('/api/health')
-def health_check():
-    """헬스 체크"""
-    return jsonify({
-        'status': 'healthy',
-        'version': '2.2',
-        'timestamp': datetime.now().isoformat()
-    })
-
-if __name__ == '__main__':
-    print("🚀 AI 명함 처리 시스템 v2.2 시작!")
-    print("================================")
-    
-    if not NAVER_OCR_SECRET_KEY or not NAVER_OCR_INVOKE_URL:
-        print("⚠️ NAVER CLOVA OCR 환경 변수가 설정되지 않았습니다!")
-    
-    try:
-        models = ollama.list()
-        print(f"✅ Ollama 연결 성공! 사용 가능한 모델: {[m['name'] for m in models.get('models', [])]}")
-    except Exception as e:
-        print(f"❌ Ollama 연결 실패: {e}. 'ollama serve'를 실행하세요.")
-    
-    print("\n📱 http://localhost:5001 에서 접속 가능합니다.")
-    app.run(debug=True, host='0.0.0.0', port=5001)
 
 

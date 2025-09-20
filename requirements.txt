@@ -1,0 +1,27 @@
+# Flask 웹 프레임워크
+Flask==2.3.3
+Werkzeug==2.3.7
+
+# 파일 처리
+Pillow==10.0.0
+
+# HTTP 요청
+requests==2.31.0
+
+# QR 코드 생성
+qrcode[pil]==7.4.2
+
+# Ollama LLM
+ollama>=0.1.7
+
+# 환경 변수 관리
+python-dotenv>=1.0.0
+
+# 한국어 문장 분리 (선택사항)
+# kss>=4.5.4
+
+# 날짜/시간 처리 (Python 내장)
+# datetime
+
+# 기타 내장 모듈들
+# os, json, re, time, base64, io, tempfile, zipfile

@@ -1,0 +1,408 @@
+HTML_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 명함 처리 시스템 v2.0</title>
+    <style>
+        /* Modern CSS Reset */
+        *, *::before, *::after { box-sizing: border-box; }
+        body, h1, h2, p, ul, li { margin: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: #f0f2f5;
+            color: #1c1e21;
+            line-height: 1.5;
+            min-height: 100vh;
+        }
+        .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+        .main-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; align-items: start; }
+        .panel { background: #fff; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); padding: 2rem; }
+        h1, h2 { color: #333; margin-bottom: 1.5rem; }
+        .mode-selection { display: flex; gap: 1rem; margin-bottom: 2rem; }
+        .btn {
+            display: inline-block; padding: 0.75rem 1.5rem; border: none; border-radius: 8px;
+            font-size: 1rem; font-weight: 600; cursor: pointer; transition: all 0.2s ease;
+            text-decoration: none; text-align: center;
+        }
+        .btn-primary { background-color: #1877f2; color: #fff; }
+        .btn-primary:hover { background-color: #166fe5; transform: translateY(-2px); }
+        .btn-secondary { background-color: #e4e6eb; color: #1c1e21; }
+        .btn-secondary:hover { background-color: #d8dbdf; }
+        .upload-area {
+            border: 2px dashed #ccd0d5; border-radius: 8px; padding: 2rem; text-align: center;
+            background-color: #f7f8fa; cursor: pointer; transition: background-color 0.2s;
+        }
+        .upload-area:hover, .upload-area.dragover { background-color: #e4e6eb; }
+        .hidden { display: none; }
+        .input-group { margin-bottom: 1rem; }
+        .input-group label { display: block; font-weight: 600; margin-bottom: 0.5rem; }
+        .input-group input {
+            width: 100%; padding: 0.75rem; border: 1px solid #ccd0d5;
+            border-radius: 6px; font-size: 1rem;
+        }
+        .result-list { list-style: none; padding: 0; max-height: 60vh; overflow-y: auto; }
+        .result-item {
+            display: flex; align-items: center; padding: 1rem; border-radius: 8px;
+            margin-bottom: 0.5rem; cursor: pointer; transition: background-color 0.2s;
+        }
+        .result-item.active, .result-item:hover { background-color: #e7f3ff; }
+        .result-item img { width: 80px; height: 50px; object-fit: cover; border-radius: 4px; margin-right: 1rem; }
+        .result-item-info { flex-grow: 1; }
+        .result-item-info p { margin: 0; }
+        .filter-bar { margin-bottom: 1rem; }
+        .qr-code img { max-width: 150px; margin: 1rem auto; display: block; }
+        .loader {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(255,255,255,0.8); backdrop-filter: blur(5px);
+            display: flex; align-items: center; justify-content: center; z-index: 999;
+        }
+        @media (max-width: 900px) { .main-grid { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header style="text-align: center; margin-bottom: 2rem;">
+            <h1>AI 명함 처리 시스템 v2.0</h1>
+            <p>다중 처리, 양면 분석 기능으로 더욱 강력해졌습니다.</p>
+        </header>
+
+        <div class="mode-selection">
+            <button class="btn btn-primary" onclick="switchMode('batch')">다중 명함 일괄 처리</button>
+            <button class="btn btn-secondary" onclick="switchMode('two-sided')">양면 명함 처리</button>
+        </div>
+
+        <div class="main-grid">
+            <!-- Left Panel: Upload & Edit -->
+            <div class="panel" id="left-panel">
+                <!-- Batch Mode UI -->
+                <div id="batch-mode-ui">
+                    <h2>1. 다중 명함 업로드</h2>
+                    <div class="upload-area" id="batch-upload-area">
+                        <p>여기로 파일을 드래그하거나 클릭하여 업로드</p>
+                    </div>
+                    <input type="file" id="batch-file-input" multiple accept="image/*" class="hidden">
+                    <button class="btn btn-primary" style="width: 100%; margin-top: 1rem;" onclick="processBatchFiles()">업로드 및 처리 시작</button>
+                </div>
+
+                <!-- Two-sided Mode UI -->
+                <div id="two-sided-mode-ui" class="hidden">
+                    <h2>1. 양면 명함 업로드</h2>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                        <div class="upload-area" id="front-upload-area"><p>앞면 (한글)</p></div>
+                        <div class="upload-area" id="back-upload-area"><p>뒷면 (영문)</p></div>
+                    </div>
+                    <input type="file" id="front-file-input" accept="image/*" class="hidden">
+                    <input type="file" id="back-file-input" accept="image/*" class="hidden">
+                    <button class="btn btn-primary" style="width: 100%; margin-top: 1rem;" onclick="processTwoSidedFiles()">양면 처리 시작</button>
+                </div>
+                
+                <hr style="margin: 2rem 0; border: none; border-top: 1px solid #e4e6eb;">
+
+                <!-- Editor UI -->
+                <div id="editor-ui" class="hidden">
+                    <h2 id="editor-title">2. 정보 수정</h2>
+                    <div id="editor-form"></div>
+                    <button class="btn btn-primary" onclick="updateItemData()">수정 내용 저장</button>
+                </div>
+            </div>
+
+            <!-- Right Panel: Results -->
+            <div class="panel" id="right-panel">
+                <h2>처리 결과</h2>
+                <div id="batch-results-ui" class="hidden">
+                    <div class="filter-bar">
+                        <input type="text" class="input-group" id="filter-input" placeholder="이름, 회사 등으로 필터링..." onkeyup="filterResults()">
+                    </div>
+                    <ul class="result-list" id="result-list"></ul>
+                    <div id="download-section" class="hidden" style="margin-top: 1.5rem;">
+                         <button class="btn btn-primary" onclick="downloadBatch()">선택 항목 다운로드</button>
+                         <p id="download-notice" style="font-size: 0.9rem; color: #666; margin-top: 0.5rem;"></p>
+                    </div>
+                </div>
+
+                <div id="single-result-ui" class="hidden">
+                    <div id="single-result-preview"></div>
+                    <div class="qr-code" id="qr-code-display"></div>
+                    <a href="#" id="vcf-download-link" class="btn btn-primary hidden">VCF 다운로드</a>
+                </div>
+
+                <div id="empty-state" style="text-align: center; padding: 2rem;">
+                    <p>좌측에서 명함을 업로드하면 여기에 결과가 표시됩니다.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loader -->
+    <div class="loader hidden" id="loader">
+        <p style="font-size: 1.2rem; font-weight: 600;">처리 중입니다. 잠시만 기다려주세요...</p>
+    </div>
+    
+    <script>
+    // --- State Management ---
+    let currentMode = 'batch';
+    let batchData = [];
+    let activeItemId = null;
+
+    // --- Mode Switching ---
+    function switchMode(mode) {
+        currentMode = mode;
+        document.getElementById('batch-mode-ui').classList.toggle('hidden', mode !== 'batch');
+        document.getElementById('two-sided-mode-ui').classList.toggle('hidden', mode !== 'two-sided');
+        document.querySelector('.mode-selection .btn-primary').classList.replace('btn-primary', 'btn-secondary');
+        event.target.classList.replace('btn-secondary','btn-primary');
+        resetAll();
+    }
+
+    // --- General Functions ---
+    function resetAll() {
+        batchData = [];
+        activeItemId = null;
+        document.getElementById('result-list').innerHTML = '';
+        document.getElementById('editor-ui').classList.add('hidden');
+        document.getElementById('batch-results-ui').classList.add('hidden');
+        document.getElementById('single-result-ui').classList.add('hidden');
+        document.getElementById('empty-state').classList.remove('hidden');
+        document.getElementById('download-section').classList.add('hidden');
+    }
+
+    const loader = document.getElementById('loader');
+    const showLoader = () => loader.classList.remove('hidden');
+    const hideLoader = () => loader.classList.add('hidden');
+
+    // --- UI Rendering ---
+    function renderBatchResults() {
+        const listEl = document.getElementById('result-list');
+        listEl.innerHTML = '';
+        const keyword = document.getElementById('filter-input').value.toLowerCase();
+        
+        batchData
+            .filter(item => JSON.stringify(item.data).toLowerCase().includes(keyword))
+            .forEach(item => {
+                const li = document.createElement('li');
+                li.className = 'result-item';
+                li.id = `item-${item.id}`;
+                li.onclick = () => selectItem(item.id);
+                
+                const name = item.data.name || '이름 없음';
+                const company = item.data.company || '회사 정보 없음';
+                
+                li.innerHTML = `
+                    <img src="data:image/png;base64,${item.thumbnail}" alt="thumbnail">
+                    <div class="result-item-info">
+                        <p style="font-weight: 600;">${name}</p>
+                        <p style="font-size: 0.9rem; color: #666;">${company}</p>
+                    </div>
+                `;
+                listEl.appendChild(li);
+            });
+        
+        if (batchData.length > 0) {
+            document.getElementById('batch-results-ui').classList.remove('hidden');
+            document.getElementById('download-section').classList.remove('hidden');
+            document.getElementById('empty-state').classList.add('hidden');
+            const downloadNotice = document.getElementById('download-notice');
+            downloadNotice.textContent = batchData.length >= 5 ? '결과물이 zip 파일로 압축되어 다운로드됩니다.' : '결과물이 vcf 파일로 다운로드됩니다.';
+        }
+    }
+    
+    function filterResults() {
+        renderBatchResults();
+    }
+
+    function selectItem(itemId) {
+        if (activeItemId) {
+            document.getElementById(`item-${activeItemId}`)?.classList.remove('active');
+        }
+        activeItemId = itemId;
+        document.getElementById(`item-${itemId}`).classList.add('active');
+        
+        const item = batchData.find(d => d.id === itemId);
+        renderEditor(item.data, false);
+    }
+    
+    function renderEditor(data, isTwoSided) {
+        const formEl = document.getElementById('editor-form');
+        formEl.innerHTML = '';
+        const fields = isTwoSided
+            ? { name_ko: '이름(한글)', name_en: '이름(영문)', title_ko: '직책(한글)', title_en: '직책(영문)', company_ko: '회사(한글)', company_en: '회사(영문)', phone: '전화번호', email: '이메일', address_ko: '주소(한글)', address_en: '주소(영문)' }
+            : { name: '이름', title: '직책', company: '회사', phone: '전화번호', email: '이메일', address: '주소' };
+
+        for (const [key, label] of Object.entries(fields)) {
+            formEl.innerHTML += `
+                <div class="input-group">
+                    <label for="edit-${key}">${label}</label>
+                    <input type="text" id="edit-${key}" value="${data[key] || ''}">
+                </div>
+            `;
+        }
+        document.getElementById('editor-title').textContent = isTwoSided ? '2. 양면 정보 수정' : '2. 정보 수정';
+        document.getElementById('editor-ui').classList.remove('hidden');
+    }
+
+    function renderSingleResult(data) {
+        document.getElementById('empty-state').classList.add('hidden');
+        document.getElementById('single-result-ui').classList.remove('hidden');
+        renderEditor(data, 'name_ko' in data);
+        
+        const vcfContent = generateVcfForDownload(data);
+        const qrBase64 = ''; // QR is generated on server
+        
+        const downloadLink = document.getElementById('vcf-download-link');
+        const blob = new Blob([vcfContent], { type: 'text/vcard' });
+        downloadLink.href = URL.createObjectURL(blob);
+        const name = data.name_en || data.name || 'contact';
+        downloadLink.download = `${name}.vcf`;
+        
+        generateQrAndVcf(data); // Call server to get QR
+    }
+    
+    // --- API Calls ---
+    async function processBatchFiles() {
+        const files = document.getElementById('batch-file-input').files;
+        if (files.length === 0) return alert('파일을 선택해주세요.');
+        
+        const formData = new FormData();
+        for(const file of files) formData.append('images', file);
+
+        showLoader();
+        const response = await fetch('/api/process-batch', { method: 'POST', body: formData });
+        const result = await response.json();
+        hideLoader();
+
+        if(result.success) {
+            batchData = result.results;
+            renderBatchResults();
+        } else {
+            alert('오류: ' + result.error);
+        }
+    }
+    
+    async function processTwoSidedFiles() {
+        const frontFile = document.getElementById('front-file-input').files[0];
+        const backFile = document.getElementById('back-file-input').files[0];
+        if (!frontFile || !backFile) return alert('앞면과 뒷면 파일을 모두 선택해주세요.');
+        
+        const formData = new FormData();
+        formData.append('frontImage', frontFile);
+        formData.append('backImage', backFile);
+
+        showLoader();
+        const response = await fetch('/api/process-two-sided', { method: 'POST', body: formData });
+        const result = await response.json();
+        hideLoader();
+        
+        if (result.success) {
+            renderSingleResult(result.contactInfo);
+        } else {
+            alert('오류: ' + result.error);
+        }
+    }
+    
+    async function downloadBatch() {
+        showLoader();
+        const response = await fetch('/api/download-batch', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ items: batchData })
+        });
+        hideLoader();
+
+        if (response.ok) {
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            const contentDisposition = response.headers.get('Content-Disposition');
+            let filename = 'contacts.zip';
+            if (contentDisposition) {
+                const filenameMatch = contentDisposition.match(/filename="(.+)"/);
+                if (filenameMatch.length > 1) filename = filenameMatch[1];
+            }
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+        } else {
+            alert('다운로드 실패');
+        }
+    }
+
+    function updateItemData() {
+        const item = batchData.find(d => d.id === activeItemId);
+        if (!item) return;
+
+        for (const key in item.data) {
+            const inputEl = document.getElementById(`edit-${key}`);
+            if(inputEl) item.data[key] = inputEl.value;
+        }
+        alert('저장되었습니다.');
+        renderBatchResults(); // Re-render to update summary if name/company changed
+        document.getElementById(`item-${activeItemId}`).classList.add('active');
+    }
+
+    async function generateQrAndVcf(data) {
+        showLoader();
+        const response = await fetch('/api/generate-vcf-qr', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ contactData: data })
+        });
+        const result = await response.json();
+        hideLoader();
+
+        if (result.success) {
+            document.getElementById('qr-code-display').innerHTML = `<img src="data:image/png;base64,${result.qrCode}" alt="QR Code">`;
+            document.getElementById('vcf-download-link').classList.remove('hidden');
+        } else {
+            alert('파일 생성 실패: ' + result.error);
+        }
+    }
+
+    // --- Utility ---
+    function generateVcfForDownload(data) {
+        const lines = ['BEGIN:VCARD', 'VERSION:3.0'];
+        if ('name_ko' in data) {
+            lines.push(`N;CHARSET=UTF-8:${data.name_ko};${data.name_en};;;`);
+            lines.push(`FN;CHARSET=UTF-8:${data.name_ko} ${data.name_en}`);
+            lines.push(`TITLE;CHARSET=UTF-8:${data.title_ko} / ${data.title_en}`);
+            lines.push(`ORG;CHARSET=UTF-8:${data.company_ko}`);
+        } else {
+            lines.push(`FN:${data.name}`);
+            lines.push(`N:${data.name};;;;`);
+            lines.push(`TITLE:${data.title}`);
+            lines.push(`ORG:${data.company}`);
+        }
+        lines.push(`TEL;TYPE=WORK,VOICE:${data.phone}`);
+        lines.push(`EMAIL;TYPE=WORK:${data.email}`);
+        lines.push(`ADR;TYPE=WORK;CHARSET=UTF-8:;;${data.address_ko || data.address};;;;`);
+        lines.push(`REV:${new Date().toISOString()}`);
+        lines.push('END:VCARD');
+        return lines.join('\\n');
+    }
+    
+    // --- Event Listeners for Upload Areas ---
+    ['batch-upload-area', 'front-upload-area', 'back-upload-area'].forEach(id => {
+        const area = document.getElementById(id);
+        const input = document.getElementById(id.replace('-area', '-input'));
+        
+        area.addEventListener('click', () => input.click());
+        area.addEventListener('dragover', e => { e.preventDefault(); area.classList.add('dragover'); });
+        area.addEventListener('dragleave', () => area.classList.remove('dragover'));
+        area.addEventListener('drop', e => {
+            e.preventDefault();
+            area.classList.remove('dragover');
+            input.files = e.dataTransfer.files;
+            if (id === 'batch-upload-area') processBatchFiles();
+        });
+    });
+
+    // --- Initial Setup ---
+    switchMode('batch');
+    </script>
+</body>
+</html>
+"""
