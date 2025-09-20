@@ -35,12 +35,7 @@ origins = [
     "http://localhost",
     "http://localhost:8001",
     # ↓↓↓↓↓↓↓ 이 부분을 추가하거나 수정하세요! ↓↓↓↓↓↓↓
-<<<<<<< HEAD
-    "https://vercel-tawny-delta.vercel.app/" 
-=======
-    "https://vercel-dq1z2loe4-junhees-projects-5f5f2302.vercel.app/" 
->>>>>>> 7bf9cd451092f9559d7b1d7c5c02bf37c17f2525
-]
+    "https://vercel-tawny-delta.vercel.app/" ]
 
 # --- CORS 설정 ---
 app.add_middleware(
