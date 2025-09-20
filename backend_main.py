@@ -78,7 +78,7 @@ def extract_structured_info_with_retry(raw_text: str, model_name: str = 'mistral
     # ... (기존 app.py의 extract_structured_info_with_retry 함수 내용과 동일)
     prompt = f"""You are an expert business card information extractor... Required JSON structure: {{"name": "", "title": "", "company": "","office_phone": "", "perenal_phone": "", "email": "", "address": ""}} ... --- Text to Analyze --- {raw_text}"""
     try:
-        response = ollama.chat(model=model_name, messages=[{'role': 'user', 'content': prompt}], format='json', options={'temperature': 0.1})
+        response = ollama.chat(model=model_name, messages=[{'role': 'user', 'content': prompt}], format='json', options={'temperature': 0.3, 'top_p': 0.9})
         content = response['message']['content']
         return json.loads(content) if isinstance(content, str) else content
     except Exception as e:
@@ -92,7 +92,7 @@ def two_sided_extract_agent(front_text: str, back_text: str, model_name: str = '
     combined_text = f"--- Front Side (Korean) ---\n{front_text}\n\n--- Back Side (English) ---\n{back_text}"
     prompt = f"""You are an expert business card extractor for two-sided (Korean/English) cards... Required JSON structure: {{"name_ko": "", ...}} ... --- Combined Text to Analyze --- {combined_text}"""
     try:
-        response = ollama.chat(model=model_name, messages=[{'role': 'user', 'content': prompt}], format='json', options={'temperature': 0.1})
+        response = ollama.chat(model=model_name, messages=[{'role': 'user', 'content': prompt}], format='json', options={'temperature': 0.3, 'top_p': 0.9})
         content = response['message']['content']
         return json.loads(content) if isinstance(content, str) else content
     except Exception as e:

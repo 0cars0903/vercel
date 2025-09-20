@@ -1,3 +1,5 @@
+# pip install -r requirements.txt
+
 # Flask 웹 프레임워크
 Flask==2.3.3
 Werkzeug==2.3.7
